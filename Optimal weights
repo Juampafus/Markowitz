@@ -1,0 +1,77 @@
+library(fPortfolio)
+library(quantmod)
+library(caTools)
+library(dplyr)
+library(PerformanceAnalytics)
+library(ggplot2)
+
+### Discrete period Markowitz portfolio optimization and optimal weights ###
+
+#Create Vector of Tickers (Here u write the ticker of ur stocks, commodities, bond, whatever)
+tickers = c("AXP", "C", "WFC", "AMZN", "JNJ", "DAX")
+
+#Here u extract the market data from yahoofinance, from is the begining date, it will go until last trading day, otherwise u need to add ", to=date"
+portfolioPrices = NULL
+for (Ticker in tickers)
+  portfolioPrices = cbind(portfolioPrices,
+                          getSymbols(Ticker, from="2016-01-01", auto.assign=FALSE)[,4])
+
+#Delete all dates with no prices
+portfolioPrices = portfolioPrices[apply(portfolioPrices,1,function(x) all(!is.na(x))),]
+#Rename Columns
+colnames(portfolioPrices) = tickers
+
+#Calculate Returns: Daily RoC #if you are looking at monthly/weekly u need to change the ROC founction by one thats called getReturns(weekly) or so. Really easy, but does trading dates only, quite smart.
+portfolioReturns = na.omit(ROC(portfolioPrices, type="discrete"))#Here also can change to continuous
+portfolioReturns = as.timeSeries(portfolioReturns)
+
+# calculate the efficient frontier
+effFrontier = portfolioFrontier(portfolioReturns, constraints = "LongOnly")
+plot(effFrontier,c(1,2,3,4))
+
+#Output Correlation
+cor_matrix =cor(portfolioReturns)
+cov_matrix = cov(portfolioReturns)
+
+cov_matrix
+cor_matrix
+
+#Plot Frontier Weights (Can Adjust Number of Points)
+frontierWeights = getWeights(effFrontier) # get allocations for each instrument for each point on the efficient frontier
+colnames(frontierWeights) = tickers
+risk_return = frontierPoints(effFrontier)
+
+#Get Minimum Variance Port, Tangency Port, etc.
+mvp = minvariancePortfolio(portfolioReturns, spec=portfolioSpec(), constraints="LongOnly")
+mvp
+tangencyPort = tangencyPortfolio(portfolioReturns, spec=portfolioSpec(), constraints="LongOnly")
+tangencyPort
+
+#Weights
+mvpweights = getWeights(mvp)
+tangencyweights = getWeights(tangencyPort)
+
+
+#Plot MVP Weights: Basic Graphs
+barplot(mvpweights, main="Minimum Variance Portfolio Weights", xlab="Assset", ylab="Weight In Portfolio (%)", col=cm.colors(ncol(frontierWeights)+2), legend=colnames(weights))
+pie(mvpweights, col=cm.colors(ncol(frontierWeights)+2))
+
+#ggplot MVP Weights
+df = data.frame(mvpweights)
+assets = colnames(frontierWeights)
+ggplot(data=df, aes(x=assets, y=mvpweights, fill=assets)) +
+  geom_bar(stat="identity", position=position_dodge(),colour="black") +
+  geom_text(aes(label=sprintf("%.02f %%",mvpweights*100)),
+            position=position_dodge(width=0.9), vjust=-0.25, check_overlap = TRUE) +
+  ggtitle("Minimum Variance Portfolio Optimal Weights")+ theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x= "Assets", y = "Weight (%)")
+
+dft = data.frame(tangencyweights)
+assets <- colnames(frontierWeights)
+ggplot(data=dft, aes(x=assets, y=tangencyweights, fill=assets)) +
+  geom_bar(stat="identity", position=position_dodge(),colour="black") +
+  geom_text(aes(label=sprintf("%.02f %%",tangencyweights*100)),
+            position=position_dodge(width=0.9), vjust=-0.25, check_overlap = TRUE) +
+  ggtitle("Tangency Portfolio Weights")+ theme(plot.title = element_text(hjust = 0.5)) +
+  labs(x= "Assets", y = "Weight (%)")
+
